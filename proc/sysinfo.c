@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -105,6 +106,7 @@ int uptime(double *restrict uptime_secs, double *restrict idle_secs) {
 
 unsigned long getbtime(void) {
     static unsigned long btime = 0;
+    bool found_btime = false;
     FILE *f;
 
     if (btime)
@@ -119,12 +121,14 @@ unsigned long getbtime(void) {
     }
 
     while ((fgets(buf, sizeof buf, f))) {
-        if (sscanf(buf, "btime %lu", &btime) == 1)
+        if (sscanf(buf, "btime %lu", &btime) == 1) {
+            found_btime = true;
             break;
+        }
     }
     fclose(f);
 
-    if (!btime) {
+    if (!found_btime) {
 	fputs("missing btime in " STAT_FILE "\n", stderr);
 	exit(1);
     }
@@ -312,7 +316,7 @@ void eight_cpu_numbers(double *restrict uret, double *restrict nret, double *res
     new_y = 0;
     tmp_z = 0.0;
     new_z = 0;
- 
+
     FILE_TO_BUF(STAT_FILE,stat_fd);
     sscanf(buf, "cpu %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu", &new_u, &new_n, &new_s, &new_i, &new_w, &new_x, &new_y, &new_z);
     ticks_past = (new_u+new_n+new_s+new_i+new_w+new_x+new_y+new_z)-(old_u+old_n+old_s+old_i+old_w+old_x+old_y+old_z);
@@ -360,7 +364,7 @@ void eight_cpu_numbers(double *restrict uret, double *restrict nret, double *res
 void loadavg(double *restrict av1, double *restrict av5, double *restrict av15) {
     double avg_1=0, avg_5=0, avg_15=0;
     char *savelocale;
- 
+
     FILE_TO_BUF(LOADAVG_FILE,loadavg_fd);
     savelocale = strdup(setlocale(LC_NUMERIC, NULL));
     setlocale(LC_NUMERIC, "C");

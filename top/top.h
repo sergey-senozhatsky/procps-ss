@@ -23,6 +23,9 @@
 #include "../proc/readproc.h"
 
         /* Defines represented in configure.ac ----------------------------- */
+//#define BOOST_PERCNT            /* enable extra precision for two % fields */
+//#define NOBOOST_MEMS            /* disable extra precision for mem fields  */
+//#define NUMA_DISABLE            /* disable summary area NUMA/Nodes display */
 //#define OOMEM_ENABLE            /* enable the SuSE out-of-memory additions */
 //#define SIGNALS_LESS            /* favor reduced signal load over response */
 
@@ -37,13 +40,12 @@
 //#define INSP_OFFDEMO            /* disable demo screens, issue msg instead */
 //#define INSP_SAVEBUF            /* preserve 'Insp_buf' contents in a file  */
 //#define INSP_SLIDE_1            /* when scrolling left/right don't move 8  */
-//#define NOBOOST_MEMS            /* disable extra precision for mem fields  */
-//#define NOBOOST_PCNT            /* disable extra precision for % fields    */
 //#define OFF_HST_HASH            /* use BOTH qsort+bsrch vs. hashing scheme */
 //#define OFF_STDIOLBF            /* disable our own stdout _IOFBF override  */
 //#define PRETEND2_5_X            /* pretend we're linux 2.5.x (for IO-wait) */
-//#define PRETEND4CPUS            /* pretend we're smp with 4 ticsers (sic)  */
+//#define PRETEND8CPUS            /* pretend we're smp with 8 ticsers (sic)  */
 //#define PRETENDNOCAP            /* use a terminal without essential caps   */
+//#define PRETEND_NUMA            /* pretend we've got some linux NUMA Nodes */
 //#define RCFILE_NOERR            /* rcfile errs silently default, vs. fatal */
 //#define RECALL_FIXED            /* don't reorder saved strings if recalled */
 //#define RMAN_IGNORED            /* don't consider auto right margin glitch */
@@ -75,6 +77,9 @@
         /* For initiating the topic of potential % CPU distortions due to
            to kernel and/or cpu anomalies (see CPU_ZEROTICS), thanks to:
               Jaromir Capik, <jcapik@redhat.com> - February, 2012 */
+
+        /* For the impetus and NUMA/Node prototype design, thanks to:
+              Lance Shelton <LShelton@fusionio.com> - April, 2013 */
 
 #ifdef PRETEND2_5_X
 #define linux_version_code LINUX_VERSION(2,5,43)
@@ -271,6 +276,9 @@ typedef struct CPU_t {
    SIC_t edge;                    // tics adjustment threshold boundary
 #endif
    int id;                        // the cpu id number (0 - nn)
+#ifndef NUMA_DISABLE
+   int node;                      // the numa node it belongs to
+#endif
 } CPU_t;
 
         /* /////////////////////////////////////////////////////////////// */
@@ -287,6 +295,7 @@ typedef struct CPU_t {
            letter shown is the corresponding 'command' toggle */
         // 'View_' flags affect the summary (minimum), taken from 'Curwin'
 #define View_CPUSUM  0x008000     // '1' - show combined cpu stats (vs. each)
+#define View_CPUNOD  0x400000     // '2' - show numa node cpu stats ('3' also)
 #define View_LOADAV  0x004000     // 'l' - display load avg and uptime summary
 #define View_STATES  0x002000     // 't' - display task/cpu(s) states summary
 #define View_MEMORY  0x001000     // 'm' - display memory summary
@@ -612,6 +621,9 @@ typedef struct WIN_t {
 #endif
 #if defined(RECALL_FIXED) && defined(TERMIOS_ONLY)
 # error 'RECALL_FIXED' conflicts with 'TERMIOS_ONLY'
+#endif
+#if defined(PRETEND_NUMA) && defined(NUMA_DISABLE)
+# error 'PRETEND_NUMA' confilcts with 'NUMA_DISABLE'
 #endif
 #if (LRGBUFSIZ < SCREENMAX)
 # error 'LRGBUFSIZ' must NOT be less than 'SCREENMAX'

@@ -451,7 +451,7 @@ static struct el * select_procs (int *num)
 
 	if (opt_newest) saved_pid = 0;
 	if (opt_oldest) saved_pid = INT_MAX;
-	
+
 	memset(&task, 0, sizeof (task));
 	while(readproc(ptp, &task)) {
 		int match = 1;
@@ -583,7 +583,7 @@ static struct el * select_procs (int *num)
 
 
 		}
-	
+
 
 
 
@@ -663,9 +663,9 @@ static void parse_opts (int argc, char **argv)
 		/* These options are for pgrep only */
 		strcat (opts, "lad:vw");
 	}
-	
+
 	strcat (opts, "LF:cfnoxP:g:s:u:U:G:t:?Vh");
-	
+
 	while ((opt = getopt_long (argc, argv, opts, longopts, NULL)) != -1) {
 		switch (opt) {
 		case SIGNAL_OPTION:
@@ -832,7 +832,9 @@ int main (int argc, char **argv)
 	struct el *procs;
 	int num;
 
+#ifdef HAVE_PROGRAM_INVOCATION_NAME
 	program_invocation_name = program_invocation_short_name;
+#endif
 	setlocale (LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);
 	textdomain(PACKAGE);
