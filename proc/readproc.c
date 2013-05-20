@@ -472,9 +472,7 @@ ENTER(0x160);
     P->sched = -1;
     P->nlwp = 0;
 
-    S = strchr(S, '(');
-    if(unlikely(!S)) goto out;
-    S++;
+    S = strchr(S, '(') + 1;
     tmp = strrchr(S, ')');
     num = tmp - S;
     if(unlikely(num >= sizeof P->cmd)) num = sizeof P->cmd - 1;
@@ -520,7 +518,7 @@ ENTER(0x160);
     if(!P->nlwp){
       P->nlwp = 1;
     }
-out:
+
 LEAVE(0x160);
 }
 
