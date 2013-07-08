@@ -72,8 +72,9 @@ static struct termios Tty_original,    // our inherited terminal definition
                       Tty_raw;         // for unsolicited input
 static int Ttychanged = 0;
 
-        /* Last established cursor state/shape */
+        /* Last established cursor state/shape, and is re-position needed */
 static const char *Cursor_state = "";
+static int         Cursor_repos;
 
         /* Program name used in error messages and local 'rc' file name */
 static char *Myname;
@@ -173,7 +174,7 @@ static WIN_t *Curwin;
            and/or that are simply more efficiently handled as globals
            [ 'Frames_...' (plural) stuff persists beyond 1 frame ]
            [ or are used in response to async signals received ! ] */
-static volatile int Frames_resize;     // time to rebuild all column headers
+static volatile int Frames_signal;     // time to rebuild all column headers
 static          int Frames_libflags;   // PROC_FILLxxx flags
 static int          Frame_maxtask;     // last known number of active tasks
                                        // ie. current 'size' of proc table
@@ -350,12 +351,15 @@ static void at_eoj (void) {
    if (Ttychanged) {
       tcsetattr(STDIN_FILENO, TCSAFLUSH, &Tty_original);
       if (keypad_local) putp(keypad_local);
+      if (Cursor_repos) putp(tg2(0, Screen_rows));
       putp("\n");
+#ifdef OFF_SCROLLBK
       if (exit_ca_mode) {
          // this next will also replace top's most recent screen with the
          // original display contents that were visible at our invocation
          putp(exit_ca_mode);
       }
+#endif
       putp(Cap_curs_norm);
       putp(Cap_clr_eol);
 #ifndef RMAN_IGNORED
@@ -373,7 +377,7 @@ static void bye_bye (const char *str) {
    at_eoj();                 // restore tty in preparation for exit
 #ifdef ATEOJ_RPTSTD
 {  proc_t *p;
-   if (!str && Ttychanged) { fprintf(stderr,
+   if (!str && !Frames_signal && Ttychanged) { fprintf(stderr,
       "\n%s's Summary report:"
       "\n\tProgram"
       "\n\t   Linux version = %u.%u.%u, %s"
@@ -443,7 +447,7 @@ static void bye_bye (const char *str) {
 
 #ifndef OFF_HST_HASH
 #ifdef ATEOJ_RPTHSH
-   if (!str && Ttychanged) {
+   if (!str && !Frames_signal && Ttychanged) {
       int i, j, pop, total_occupied, maxdepth, maxdepth_sav, numdepth
          , cross_foot, sz = HHASH_SIZ * (unsigned)sizeof(int);
       int depths[HHASH_SIZ];
@@ -584,6 +588,7 @@ static void sig_endpgm (int dont_care_sig) {
 // POSIX.1-2004 async-signal-safe: sigfillset, sigprocmask
    sigfillset(&ss);
    sigprocmask(SIG_BLOCK, &ss, NULL);
+   Frames_signal = BREAK_sig;
    bye_bye(NULL);
    (void)dont_care_sig;
 } // end: sig_endpgm
@@ -591,17 +596,13 @@ static void sig_endpgm (int dont_care_sig) {
 
         /*
          * Catches:
-         *    SIGTSTP, SIGTTIN and SIGTTOU
-         * note:
-         *    we don't fiddle with with those enter/exit_ca_mode strings
-         *    because we want to retain most of the last screen contents
-         *    as a visual reminder this program is suspended, not ended! */
+         *    SIGTSTP, SIGTTIN and SIGTTOU */
 static void sig_paused (int dont_care_sig) {
 // POSIX.1-2004 async-signal-safe: tcsetattr, tcdrain, raise
    if (-1 == tcsetattr(STDIN_FILENO, TCSAFLUSH, &Tty_original))
       error_exit(fmtmk(N_fmt(FAIL_tty_set_fmt), strerror(errno)));
    if (keypad_local) putp(keypad_local);
-   putp(tg2(0, Screen_rows));
+   if (Cursor_repos) putp(tg2(0, Screen_rows));
    putp(Cap_curs_norm);
 #ifndef RMAN_IGNORED
    putp(Cap_smam);
@@ -619,7 +620,7 @@ static void sig_paused (int dont_care_sig) {
 #endif
    if (keypad_xmit) putp(keypad_xmit);
    putp(Cursor_state);
-   Frames_resize = RESIZ_sig;
+   Frames_signal = BREAK_sig;
    (void)dont_care_sig;
 } // end: sig_paused
 
@@ -630,7 +631,7 @@ static void sig_paused (int dont_care_sig) {
 static void sig_resize (int dont_care_sig) {
 // POSIX.1-2004 async-signal-safe: tcdrain
    tcdrain(STDOUT_FILENO);
-   Frames_resize = RESIZ_sig;
+   Frames_signal = BREAK_sig;
    (void)dont_care_sig;
 } // end: sig_resize
 
@@ -928,12 +929,13 @@ static inline int ioa (struct timespec *ts) {
    FD_ZERO(&fs);
    FD_SET(STDIN_FILENO, &fs);
 
-#ifndef SIGNALS_LESS // conditional comments are silly, but help in documenting
-   // hold here until we've got keyboard input, any signal (including SIGWINCH)
-#else
+#ifdef SIGNALS_LESS // conditional comments are silly, but help in documenting
    // hold here until we've got keyboard input, any signal except SIGWINCH
-#endif
    // or (optionally) we timeout with nanosecond granularity
+#else
+   // hold here until we've got keyboard input, any signal (including SIGWINCH)
+   // or (optionally) we timeout with nanosecond granularity
+#endif
    rc = pselect(STDIN_FILENO + 1, &fs, NULL, NULL, ts, &Sigwinch_set);
 
    if (rc < 0) rc = 0;
@@ -1079,12 +1081,14 @@ static char *ioline (const char *prompt) {
    static char buf[MEDBUFSIZ];
    char *p;
 
+   Cursor_repos = 1;
    show_pmt(prompt);
    memset(buf, '\0', sizeof(buf));
    ioch(1, buf, sizeof(buf)-1);
 
    if ((p = strpbrk(buf, ws))) *p = '\0';
    // note: we DO produce a vaid 'string'
+   Cursor_repos = 0;
    return buf;
 } // end: ioline
 
@@ -1115,6 +1119,7 @@ static char *ioline (const char *prompt) {
    };
    static struct lin_s *anchor, *plin;
 
+   Cursor_repos = 1;
    if (!anchor) {
       anchor = alloc_c(sizeof(struct lin_s));
       anchor->str = alloc_s("");       // top-of-stack == empty str
@@ -1180,6 +1185,7 @@ static char *ioline (const char *prompt) {
       putp(tg2(beg+pos, Msg_row));
    } while (key && key != kbd_ENTER && key != kbd_ESC);
 
+   Cursor_repos = 0;
    // weed out duplicates, including empty strings (top-of-stack)...
    for (i = 0, plin = anchor; ; i++) {
 #ifdef RECALL_FIXED
@@ -1263,7 +1269,7 @@ static float get_float (const char *prompt) {
    float f;
 
    line = ioline(prompt);
-   if (!line[0] || Frames_resize) return -1.0;
+   if (!line[0] || Frames_signal) return -1.0;
    // note: we're not allowing negative floats
    if (strcspn(line, "+,.0123456789")) {
       show_msg(N_txt(BAD_numfloat_txt));
@@ -1284,7 +1290,7 @@ static int get_int (const char *prompt) {
    int n;
 
    line = ioline(prompt);
-   if (Frames_resize) return GET_INT_BAD;
+   if (Frames_signal) return GET_INT_BAD;
    if (!line[0]) return GET_INTNONE;
    // note: we've got to allow negative ints (renice)
    if (strcspn(line, "-+0123456789")) {
@@ -1822,7 +1828,7 @@ static void adj_geometry (void) {
    PSU_CLREOS(0);
 
    fflush(stdout);
-   Frames_resize = RESIZ_clr;
+   Frames_signal = BREAK_off;
 } // end: adj_geometry
 
 
@@ -2120,6 +2126,7 @@ static void fields_utility (void) {
    int i, key;
    FLG_t f;
 
+   Cursor_repos = 1;
    spewFI
 signify_that:
    putp(Cap_clr_scr);
@@ -2133,7 +2140,7 @@ signify_that:
       display_fields(i, (p != NULL));
       fflush(stdout);
 
-      if (Frames_resize) goto signify_that;
+      if (Frames_signal) goto signify_that;
       key = iokey(1);
       if (key < 1) goto signify_that;
 
@@ -2180,6 +2187,7 @@ signify_that:
             break;
       }
    } while (key != 'q' && key != kbd_ESC);
+   Cursor_repos = 0;
  #undef unSCRL
  #undef swapEM
  #undef spewFI
@@ -3051,7 +3059,7 @@ signify_that:
          lest repeated <Enter> keys produce immediate re-selection in caller */
       tcflush(STDIN_FILENO, TCIFLUSH);
 
-      if (Frames_resize) goto signify_that;
+      if (Frames_signal) goto signify_that;
       key = iokey(1);
       if (key < 1) goto signify_that;
 
@@ -3156,7 +3164,7 @@ signify_that:
          , pid, p->cmd, p->euser, sels));
       INSP_MKSL(0, " ");
 
-      if (Frames_resize) goto signify_that;
+      if (Frames_signal) goto signify_that;
       if (key == INT_MAX) key = iokey(1);
       if (key < 1) goto signify_that;
 
@@ -3768,8 +3776,10 @@ static void whack_terminal (void) {
    // thanks anyway stdio, but we'll manage buffering at the frame level...
    setbuffer(stdout, Stdout_buf, sizeof(Stdout_buf));
 #endif
+#ifdef OFF_SCROLLBK
    // this has the effect of disabling any troublesome scrollback buffer...
    if (enter_ca_mode) putp(enter_ca_mode);
+#endif
    // and don't forget to ask iokey to initialize his tinfo_tab
    iokey(0);
 } // end: whack_terminal
@@ -3899,7 +3909,7 @@ signify_that:
       putp(Cap_clr_eos);
       fflush(stdout);
 
-      if (Frames_resize) goto signify_that;
+      if (Frames_signal) goto signify_that;
       key = iokey(1);
       if (key < 1) goto signify_that;
 
@@ -4131,7 +4141,7 @@ signify_that:
    putp(Cap_clr_eos);
    fflush(stdout);
 
-   if (Frames_resize) goto signify_that;
+   if (Frames_signal) goto signify_that;
    key = iokey(1);
    if (key < 1) goto signify_that;
 
@@ -4147,7 +4157,7 @@ signify_that:
                , Winstk[2].rc.winname, Winstk[3].rc.winname));
             putp(Cap_clr_eos);
             fflush(stdout);
-            if (Frames_resize || (key = iokey(1)) < 1) {
+            if (Frames_signal || (key = iokey(1)) < 1) {
                adj_geometry();
                putp(Cap_clr_scr);
             } else w = win_select(key);
@@ -4337,7 +4347,7 @@ static void keys_global (int ch) {
                if (0 > pid) pid = def;
                str = ioline(fmtmk(N_fmt(GET_sigs_num_fmt), pid, SIGTERM));
                if (*str) sig = signal_name_to_number(str);
-               if (Frames_resize) break;
+               if (Frames_signal) break;
                if (0 < sig && kill(pid, sig))
                   show_msg(fmtmk(N_fmt(FAIL_signals_fmt)
                      , pid, sig, strerror(errno)));
@@ -4905,12 +4915,12 @@ static void do_key (int ch) {
          for (i = 0; i < MAXTBL(key_tab); ++i)
             if (strchr(key_tab[i].keys, ch)) {
                key_tab[i].func(ch);
-               Frames_resize = RESIZ_kbd;
+               Frames_signal = BREAK_kbd;
                putp((Cursor_state = Cap_curs_hide));
                return;
             }
    };
-   /* Frames_resize above will force a rebuild of all column headers and
+   /* Frames_signal above will force a rebuild of all column headers and
       the PROC_FILLxxx flags.  It's NOT simply lazy programming.  Here are
       some keys that COULD require new column headers and/or libproc flags:
          'A' - likely
@@ -5454,7 +5464,7 @@ static void frame_make (void) {
    int i, scrlins;
 
    // deal with potential signal(s) since the last time around...
-   if (Frames_resize)
+   if (Frames_signal)
       zap_fieldstab();
 
    // whoa either first time or thread/task mode change, (re)prime the pump...
@@ -5545,7 +5555,7 @@ int main (int dont_care_argc, char **argv) {
                     produce a screen refresh. in this main loop frame_make
                     assumes responsibility for such refreshes. other logic
                     in contact with users must deal more obliquely with an
-                    interrupt/refresh (hint: Frames_resize + return code)!
+                    interrupt/refresh (hint: Frames_signal + return code)!
 
                     (everything is perfectly justified plus right margins)
                     (are completely filled, but of course it must be luck)

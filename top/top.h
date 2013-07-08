@@ -41,6 +41,7 @@
 //#define INSP_SAVEBUF            /* preserve 'Insp_buf' contents in a file  */
 //#define INSP_SLIDE_1            /* when scrolling left/right don't move 8  */
 //#define OFF_HST_HASH            /* use BOTH qsort+bsrch vs. hashing scheme */
+//#define OFF_SCROLLBK            /* disable tty emulators scrollback buffer */
 //#define OFF_STDIOLBF            /* disable our own stdout _IOFBF override  */
 //#define PRETEND2_5_X            /* pretend we're linux 2.5.x (for IO-wait) */
 //#define PRETEND8CPUS            /* pretend we're smp with 8 ticsers (sic)  */
@@ -207,9 +208,9 @@ enum scale_enum {
    SK_Kb, SK_Mb, SK_Gb, SK_Tb, SK_Pb, SK_Eb, SK_SENTINEL
 };
 
-        /* Used to manipulate (and document) the Frames_resize states */
+        /* Used to manipulate (and document) the Frames_signal states */
 enum resize_states {
-   RESIZ_clr, RESIZ_kbd, RESIZ_sig
+   BREAK_off = 0, BREAK_kbd, BREAK_sig
 };
 
         /* This typedef just ensures consistent 'process flags' handling */
