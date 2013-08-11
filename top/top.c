@@ -72,9 +72,8 @@ static struct termios Tty_original,    // our inherited terminal definition
                       Tty_raw;         // for unsolicited input
 static int Ttychanged = 0;
 
-        /* Last established cursor state/shape, and is re-position needed */
+        /* Last established cursor state/shape */
 static const char *Cursor_state = "";
-static int         Cursor_repos;
 
         /* Program name used in error messages and local 'rc' file name */
 static char *Myname;
@@ -351,7 +350,7 @@ static void at_eoj (void) {
    if (Ttychanged) {
       tcsetattr(STDIN_FILENO, TCSAFLUSH, &Tty_original);
       if (keypad_local) putp(keypad_local);
-      if (Cursor_repos) putp(tg2(0, Screen_rows));
+      putp(tg2(0, Screen_rows));
       putp("\n");
 #ifdef OFF_SCROLLBK
       if (exit_ca_mode) {
@@ -602,7 +601,7 @@ static void sig_paused (int dont_care_sig) {
    if (-1 == tcsetattr(STDIN_FILENO, TCSAFLUSH, &Tty_original))
       error_exit(fmtmk(N_fmt(FAIL_tty_set_fmt), strerror(errno)));
    if (keypad_local) putp(keypad_local);
-   if (Cursor_repos) putp(tg2(0, Screen_rows));
+   putp(tg2(0, Screen_rows));
    putp(Cap_curs_norm);
 #ifndef RMAN_IGNORED
    putp(Cap_smam);
@@ -1081,14 +1080,12 @@ static char *ioline (const char *prompt) {
    static char buf[MEDBUFSIZ];
    char *p;
 
-   Cursor_repos = 1;
    show_pmt(prompt);
    memset(buf, '\0', sizeof(buf));
    ioch(1, buf, sizeof(buf)-1);
 
    if ((p = strpbrk(buf, ws))) *p = '\0';
    // note: we DO produce a vaid 'string'
-   Cursor_repos = 0;
    return buf;
 } // end: ioline
 
@@ -1119,7 +1116,6 @@ static char *ioline (const char *prompt) {
    };
    static struct lin_s *anchor, *plin;
 
-   Cursor_repos = 1;
    if (!anchor) {
       anchor = alloc_c(sizeof(struct lin_s));
       anchor->str = alloc_s("");       // top-of-stack == empty str
@@ -1185,7 +1181,6 @@ static char *ioline (const char *prompt) {
       putp(tg2(beg+pos, Msg_row));
    } while (key && key != kbd_ENTER && key != kbd_ESC);
 
-   Cursor_repos = 0;
    // weed out duplicates, including empty strings (top-of-stack)...
    for (i = 0, plin = anchor; ; i++) {
 #ifdef RECALL_FIXED
@@ -2126,7 +2121,6 @@ static void fields_utility (void) {
    int i, key;
    FLG_t f;
 
-   Cursor_repos = 1;
    spewFI
 signify_that:
    putp(Cap_clr_scr);
@@ -2187,7 +2181,6 @@ signify_that:
             break;
       }
    } while (key != 'q' && key != kbd_ESC);
-   Cursor_repos = 0;
  #undef unSCRL
  #undef swapEM
  #undef spewFI
@@ -2794,7 +2787,7 @@ static void insp_cnt_nl (void) {
    Insp_p[0] = Insp_buf;
    Insp_p[Insp_nl++] = cur;
    Insp_p[Insp_nl] = end;
-   if ((end - cur) == 1)          // if there's a eof null delimiter,
+   if ((end - cur) == 1)          // if there's an eof null delimiter,
       --Insp_nl;                  // don't count it as a new line
 } // end: insp_cnt_nl
 
@@ -3104,6 +3097,7 @@ signify_that:
          case '/':
          case 'n':
             insp_find_str(key, &curcol, &curlin);
+            // must re-hide cursor in case a prompt for a string makes it huge
             putp((Cursor_state = Cap_curs_hide));
             break;
          case '=':
@@ -3824,12 +3818,12 @@ static WIN_t *win_select (int ch) {
       if (1 > (ch = iokey(1))) return w;
    }
    switch (ch) {
-      case 'a':                         // we don't carry 'a' / 'w' in our
-         w = w->next;                   // pmt - they're here for a good
-         break;                         // friend of ours -- wins_colors.
-      case 'w':                         // (however those letters work via
-         w = w->prev;                   // the pmt too but gee, end-loser
-         break;                         // should just press the darn key)
+      case 'a':                   // we don't carry 'a' / 'w' in our
+         w = w->next;             // pmt - they're here for a good
+         break;                   // friend of ours -- wins_colors.
+      case 'w':                   // (however those letters work via
+         w = w->prev;             // the pmt too but gee, end-loser
+         break;                   // should just press the darn key)
       case '1': case '2' : case '3': case '4':
          w = &Winstk[ch - '1'];
          break;
@@ -4901,23 +4895,21 @@ static void do_key (int ch) {
    };
    int i;
 
-   putp((Cursor_state = Cap_curs_hide));
    switch (ch) {
       case 0:                // ignored (always)
       case kbd_ESC:          // ignored (sometimes)
-         return;
+         goto all_done;
       case 'q':              // no return from this guy
          bye_bye(NULL);
       case 'W':              // no need for rebuilds
          write_rcfile();
-         return;
+         goto all_done;
       default:               // and now, the real work...
          for (i = 0; i < MAXTBL(key_tab); ++i)
             if (strchr(key_tab[i].keys, ch)) {
                key_tab[i].func(ch);
                Frames_signal = BREAK_kbd;
-               putp((Cursor_state = Cap_curs_hide));
-               return;
+               goto all_done;
             }
    };
    /* Frames_signal above will force a rebuild of all column headers and
@@ -4943,6 +4935,8 @@ static void do_key (int ch) {
     */
 
    show_msg(N_txt(UNKNOWN_cmds_txt));
+all_done:
+   putp((Cursor_state = Cap_curs_hide));
 } // end: do_key
 
 
@@ -5483,6 +5477,7 @@ static void frame_make (void) {
    Max_lines = (Screen_rows - Msg_row) - 1;
    OFFw(w, INFINDS_xxx);
 
+   // one way or another, rid us of any prior frame's msg
    if (VIZISw(w) && CHKw(w, View_SCROLL)) show_scroll();
    else PUTT("%s%s", tg2(0, Msg_row), Cap_clr_eol);
 
@@ -5501,8 +5496,7 @@ static void frame_make (void) {
       }
    }
 
-   /* clear to end-of-screen (critical if last window is 'idleps off'),
-      then put the cursor in-its-place, and rid us of any prior frame's msg
+   /* clear to end-of-screen - critical if last window is 'idleps off'
       (main loop must iterate such that we're always called before sleep) */
    if (scrlins < Max_lines) {
       putp(Cap_nl_clreos);
