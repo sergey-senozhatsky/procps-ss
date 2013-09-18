@@ -494,7 +494,8 @@ void getstat(jiff *restrict cuse, jiff *restrict cice, jiff *restrict csys, jiff
     getrunners(running, blocked);
   }
 
-  (*running)--;   // exclude vmstat itself
+  if(*running)
+    (*running)--;   // exclude vmstat itself
 
   if(need_vmstat_file){  /* Linux 2.5.40-bk4 and above */
     vminfo();
@@ -548,6 +549,7 @@ static int compare_mem_table_structs(const void *a, const void *b){
  * Dirty:               0 kB    2.5.41+
  * Writeback:           0 kB    2.5.41+
  * Mapped:           9792 kB    2.5.41+
+ * Shmem:              28 kB    2.6.32+
  * Slab:             4564 kB    2.5.41+
  * Committed_AS:     8440 kB    2.5.41+
  * PageTables:        304 kB    2.5.41+
@@ -558,7 +560,7 @@ static int compare_mem_table_structs(const void *a, const void *b){
  * Hugepagesize:     4096 kB    2.5.??+
  */
 
-/* obsolete */
+/* obsolete since 2.6.x, but reused for shmem in 2.6.32+ */
 unsigned long kb_main_shared;
 /* old but still kicking -- the important stuff */
 unsigned long kb_main_buffers;

@@ -527,6 +527,7 @@ static void bye_bye (const char *str) {
       fputs(str, stderr);
       exit(EXIT_FAILURE);
    }
+   if (Batch) putp("\n");
    exit(EXIT_SUCCESS);
 } // end: bye_bye
 
@@ -751,13 +752,6 @@ static int show_pmt (const char *str) {
 
 
         /*
-         * Show a special coordinate message, in support of scrolling */
-static inline void show_scroll (void) {
-   PUTT(Scroll_fmts, tg2(0, Msg_row), Frame_maxtask);
-} // end: show_scroll
-
-
-        /*
          * Show lines with specially formatted elements, but only output
          * what will fit within the current screen width.
          *    Our special formatting consists of:
@@ -857,7 +851,7 @@ static void show_special (int interact, const char *glob) {
 
         /*
          * Create a nearly complete scroll coordinates message, but still
-         * a format string since we'll be missing a tgoto and total tasks. */
+         * a format string since we'll be missing the current total tasks. */
 static void updt_scroll_msg (void) {
    char tmp1[SMLBUFSIZ], tmp2[SMLBUFSIZ];
    int totpflgs = Curwin->totpflgs;
@@ -878,8 +872,10 @@ static void updt_scroll_msg (void) {
    if (Curwin->varcolbeg)
       snprintf(tmp2, sizeof(tmp2), "%s + %d", tmp1, Curwin->varcolbeg);
 #endif
+   // this Scroll_fmts string no longer provides for termcap tgoto so that
+   // the usage timing is critical -- see frame_make() for additional info
    snprintf(Scroll_fmts, sizeof(Scroll_fmts)
-      , "%%s%s  %.*s%s", Caps_off, Screen_cols - 3, tmp2, Cap_clr_eol);
+      , "%s  %.*s%s", Caps_off, Screen_cols - 3, tmp2, Cap_clr_eol);
 } // end: updt_scroll_msg
 
 /*######  Low Level Memory/Keyboard/File I/O support  ####################*/
@@ -1797,6 +1793,7 @@ static void adj_geometry (void) {
          if (w_cols && w_cols < W_MIN_COL) w_cols = W_MIN_COL;
          if (w_rows && w_rows < W_MIN_ROW) w_rows = W_MIN_ROW;
       }
+      if (w_cols > SCREENMAX) w_cols = SCREENMAX;
       w_set = 1;
    }
 
@@ -3399,26 +3396,25 @@ static void configs_read (void) {
 
    fp = fopen(SYS_RCFILESPEC, "r");
    if (fp) {
-      fbuf[0] = '\0';
-      fgets(fbuf, sizeof(fbuf), fp);             // sys rc file, line 1
-      if (strchr(fbuf, 's')) Secure_mode = 1;
-      fbuf[0] = '\0';
-      fgets(fbuf, sizeof(fbuf), fp);             // sys rc file, line 2
-      sscanf(fbuf, "%f", &Rc.delay_time);
+      if (fgets(fbuf, sizeof(fbuf), fp)) {     // sys rc file, line 1
+         Secure_mode = 1;
+         if (fgets(fbuf, sizeof(fbuf), fp))    // sys rc file, line 2
+            sscanf(fbuf, "%f", &Rc.delay_time);
+      }
       fclose(fp);
    }
 
    fp = fopen(Rc_name, "r");
    if (fp) {
       int tmp_whole, tmp_fract;
-      fbuf[0] = '\0';
-      fgets(fbuf, sizeof(fbuf), fp);             // ignore eyecatcher
+      if (fgets(fbuf, sizeof(fbuf), fp))       // ignore eyecatcher
+         ;                                     // avoid -Wunused-result
       if (6 != fscanf(fp
          , "Id:%c, Mode_altscr=%d, Mode_irixps=%d, Delay_time=%d.%d, Curwin=%d\n"
          , &Rc.id, &Rc.mode_altscr, &Rc.mode_irixps, &tmp_whole, &tmp_fract, &i)) {
             p = fmtmk(N_fmt(RC_bad_files_fmt), Rc_name);
             Rc_questions = -1;
-            goto try_inspect_entries;            // maybe a faulty 'inspect' echo
+            goto try_inspect_entries;          // maybe a faulty 'inspect' echo
       }
       // you saw that, right?  (fscanf stickin' it to 'i')
       Curwin = &Winstk[i];
@@ -3447,19 +3443,19 @@ static void configs_read (void) {
                goto default_or_error;
 
          switch (Rc.id) {
-            case 'f':                  // 3.3.0 thru 3.3.3 (procps-ng)
-               SETw(w, Show_JRNUMS);   //    fall through !
-            case 'g':                  // current RCF_VERSION_ID
-            default:                   // and future versions?
+            case 'a':                          // 3.2.8 (former procps)
+               if (config_cvt(w))
+                  goto default_or_error;
+               break;
+            case 'f':                          // 3.3.0 thru 3.3.3 (procps-ng)
+               SETw(w, Show_JRNUMS);           //    fall through !
+            case 'g':                          // current RCF_VERSION_ID
+            default:                           // and future versions?
                if (strlen(w->rc.fieldscur) != sizeof(DEF_FIELDS) - 1)
                   goto default_or_error;
                for (x = 0; x < P_MAXPFLGS; ++x)
                   if (P_MAXPFLGS <= FLDget(w, x))
                      goto default_or_error;
-               break;
-            case 'a':                  // 3.2.8 (former procps)
-               if (config_cvt(w))
-                  goto default_or_error;
                break;
          }
 #ifndef USE_X_COLHDR
@@ -3468,8 +3464,9 @@ static void configs_read (void) {
       } // end: for (GROUPSMAX)
 
       // any new addition(s) last, for older rcfiles compatibility...
-      fscanf(fp, "Fixed_widest=%d, Summ_mscale=%d, Task_mscale=%d, Zero_suppress=%d\n"
-         , &Rc.fixed_widest, &Rc.summ_mscale, &Rc.task_mscale, &Rc.zero_suppress);
+      if (fscanf(fp, "Fixed_widest=%d, Summ_mscale=%d, Task_mscale=%d, Zero_suppress=%d\n"
+         , &Rc.fixed_widest, &Rc.summ_mscale, &Rc.task_mscale, &Rc.zero_suppress))
+            ;                                  // avoid -Wunused-result
 
 try_inspect_entries:
       // we'll start off Inspect stuff with 1 'potential' blank line
@@ -5001,10 +4998,10 @@ static void summary_show (void) {
    // Display Uptime and Loadavg
    if (isROOM(View_LOADAV, 1)) {
       if (!Rc.mode_altscr)
-         show_special(0, fmtmk(LOADAV_line, Myname, sprint_uptime()));
+         show_special(0, fmtmk(LOADAV_line, Myname, sprint_uptime(0)));
       else
          show_special(0, fmtmk(CHKw(w, Show_TASKON)? LOADAV_line_alt : LOADAV_line
-            , w->grpname, sprint_uptime()));
+            , w->grpname, sprint_uptime(0)));
       Msg_row += 1;
    } // end: View_LOADAV
 
@@ -5477,9 +5474,12 @@ static void frame_make (void) {
    Max_lines = (Screen_rows - Msg_row) - 1;
    OFFw(w, INFINDS_xxx);
 
-   // one way or another, rid us of any prior frame's msg
-   if (VIZISw(w) && CHKw(w, View_SCROLL)) show_scroll();
-   else PUTT("%s%s", tg2(0, Msg_row), Cap_clr_eol);
+   /* one way or another, rid us of any prior frame's msg
+      [ now that this is positioned after the call to summary_show(), ]
+      [ we no longer need or employ tg2(0, Msg_row) since all summary ]
+      [ lines end with a newline, and header lines begin with newline ] */
+   if (VIZISw(w) && CHKw(w, View_SCROLL)) PUTT(Scroll_fmts, Frame_maxtask);
+   else putp(Cap_clr_eol);
 
    if (!Rc.mode_altscr) {
       // only 1 window to show so, piece o' cake
