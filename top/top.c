@@ -254,6 +254,12 @@ SCB_NUM1(FV2, min_delta)
 SCB_NUMx(GID, egid)
 SCB_STRS(GRP, egroup)
 SCB_NUMx(NCE, nice)
+SCB_NUM1(NS1, ns[IPCNS])
+SCB_NUM1(NS2, ns[MNTNS])
+SCB_NUM1(NS3, ns[NETNS])
+SCB_NUM1(NS4, ns[PIDNS])
+SCB_NUM1(NS5, ns[USERNS])
+SCB_NUM1(NS6, ns[UTSNS])
 #ifdef OOMEM_ENABLE
 SCB_NUM1(OOA, oom_adj)
 SCB_NUM1(OOM, oom_score)
@@ -1645,6 +1651,7 @@ end_justifies:
 #define L_EGROUP   PROC_FILLSTATUS | PROC_FILLGRP
 #define L_SUPGRP   PROC_FILLSTATUS | PROC_FILLSUPGRP
 #define L_USED     PROC_FILLSTATUS | PROC_FILLMEM
+#define L_NS       PROC_FILLNS
    // make 'none' non-zero (used to be important to Frames_libflags)
 #define L_NONE     PROC_SPARE_1
    // from either 'stat' or 'status' (preferred), via bits not otherwise used
@@ -1735,10 +1742,16 @@ static FLD_t Fieldstab[] = {
    {     3,     -1,  A_right,  SF(FV1),  L_stat    },
    {     3,     -1,  A_right,  SF(FV2),  L_stat    },
 #ifndef NOBOOST_MEMS
-   {     6,  SK_Kb,  A_right,  SF(USE),  L_USED    }
+   {     6,  SK_Kb,  A_right,  SF(USE),  L_USED    },
 #else
-   {     4,  SK_Kb,  A_right,  SF(USE),  L_USED    }
+   {     4,  SK_Kb,  A_right,  SF(USE),  L_USED    },
 #endif
+   {    10,     -1,  A_right,  SF(NS1),  L_NS      }, // IPCNS
+   {    10,     -1,  A_right,  SF(NS2),  L_NS      }, // MNTNS
+   {    10,     -1,  A_right,  SF(NS3),  L_NS      }, // NETNS
+   {    10,     -1,  A_right,  SF(NS4),  L_NS      }, // PIDNS
+   {    10,     -1,  A_right,  SF(NS5),  L_NS      }, // USERNS
+   {    10,     -1,  A_right,  SF(NS6),  L_NS      }  // UTSNS
  #undef SF
  #undef A_left
  #undef A_right
@@ -2261,6 +2274,7 @@ static void zap_fieldstab (void) {
 
    /* and accommodate optional wider non-scalable columns (maybe) */
    if (!AUTOX_MODE) {
+      int i;
       Fieldstab[P_UED].width = Fieldstab[P_URD].width
          = Fieldstab[P_USD].width = Fieldstab[P_GID].width
          = Rc.fixed_widest ? 5 + Rc.fixed_widest : 5;
@@ -2271,6 +2285,9 @@ static void zap_fieldstab (void) {
          = Rc.fixed_widest ? 8 + Rc.fixed_widest : 8;
       Fieldstab[P_WCH].width
          = Rc.fixed_widest ? 10 + Rc.fixed_widest : 10;
+      for (i = P_NS1; i < P_NS1 + NUM_NS; i++)
+         Fieldstab[i].width
+            = Rc.fixed_widest ? 10 + Rc.fixed_widest : 10;
    }
 
    /* plus user selectable scaling */
@@ -2298,6 +2315,7 @@ static CPU_t *cpus_refresh (CPU_t *cpus) {
    static FILE *fp = NULL;
    static int siz, sav_slot = -1;
    static char *buf;
+   CPU_t *sum_ptr;                               // avoid gcc subscript bloat
    int i, num, tot_read;
 #ifndef NUMA_DISABLE
    int node;
@@ -2342,79 +2360,79 @@ static CPU_t *cpus_refresh (CPU_t *cpus) {
  #undef buffGRW
 
    // remember from last time around
-   memcpy(&cpus[sumSLOT].sav, &cpus[sumSLOT].cur, sizeof(CT_t));
+   sum_ptr = &cpus[sumSLOT];
+   memcpy(&sum_ptr->sav, &sum_ptr->cur, sizeof(CT_t));
    // then value the last slot with the cpu summary line
    if (4 > sscanf(bp, "cpu %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu"
-      , &cpus[sumSLOT].cur.u, &cpus[sumSLOT].cur.n, &cpus[sumSLOT].cur.s
-      , &cpus[sumSLOT].cur.i, &cpus[sumSLOT].cur.w, &cpus[sumSLOT].cur.x
-      , &cpus[sumSLOT].cur.y, &cpus[sumSLOT].cur.z))
+      , &sum_ptr->cur.u, &sum_ptr->cur.n, &sum_ptr->cur.s
+      , &sum_ptr->cur.i, &sum_ptr->cur.w, &sum_ptr->cur.x
+      , &sum_ptr->cur.y, &sum_ptr->cur.z))
          error_exit(N_txt(FAIL_statget_txt));
 #ifndef CPU_ZEROTICS
-   cpus[sumSLOT].cur.tot = cpus[sumSLOT].cur.u + cpus[sumSLOT].cur.s
-      + cpus[sumSLOT].cur.n + cpus[sumSLOT].cur.i + cpus[sumSLOT].cur.w
-      + cpus[sumSLOT].cur.x + cpus[sumSLOT].cur.y + cpus[sumSLOT].cur.z;
+   sum_ptr->cur.tot = sum_ptr->cur.u + sum_ptr->cur.s
+      + sum_ptr->cur.n + sum_ptr->cur.i + sum_ptr->cur.w
+      + sum_ptr->cur.x + sum_ptr->cur.y + sum_ptr->cur.z;
    /* if a cpu has registered substantially fewer tics than those expected,
       we'll force it to be treated as 'idle' so as not to present misleading
       percentages. */
-   cpus[sumSLOT].edge =
-      ((cpus[sumSLOT].cur.tot - cpus[sumSLOT].sav.tot) / smp_num_cpus) / (100 / TICS_EDGE);
+   sum_ptr->edge =
+      ((sum_ptr->cur.tot - sum_ptr->sav.tot) / smp_num_cpus) / (100 / TICS_EDGE);
 #endif
 
 #ifndef NUMA_DISABLE
-   for (i = 0; i < Numa_node_tot; i++) {
-      node = sumSLOT + 1 + i;
-      // remember from last time around
-      memcpy(&cpus[node].sav, &cpus[node].cur, sizeof(CT_t));
-      // initialize current node statistics
-      memset(&cpus[node].cur, 0, sizeof(CT_t));
-#ifndef CPU_ZEROTICS
-      cpus[node].edge = cpus[sumSLOT].edge;
-      // this is for symmetry only, it's not currently required
-      cpus[node].cur.tot = cpus[sumSLOT].cur.tot;
-#endif
-   }
+   // forget all of the prior node statistics (maybe)
+   if (CHKw(Curwin, View_CPUNOD))
+      memset(sum_ptr + 1, 0, Numa_node_tot * sizeof(CPU_t));
 #endif
 
    // now value each separate cpu's tics...
    for (i = 0; i < sumSLOT; i++) {
+      CPU_t *cpu_ptr = &cpus[i];               // avoid gcc subscript bloat
 #ifdef PRETEND8CPUS
       bp = buf;
 #endif
       bp = 1 + strchr(bp, '\n');
       // remember from last time around
-      memcpy(&cpus[i].sav, &cpus[i].cur, sizeof(CT_t));
-      if (4 > sscanf(bp, "cpu%d %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu", &cpus[i].id
-         , &cpus[i].cur.u, &cpus[i].cur.n, &cpus[i].cur.s
-         , &cpus[i].cur.i, &cpus[i].cur.w, &cpus[i].cur.x
-         , &cpus[i].cur.y, &cpus[i].cur.z)) {
-            memmove(&cpus[i], &cpus[sumSLOT], sizeof(CPU_t));
+      memcpy(&cpu_ptr->sav, &cpu_ptr->cur, sizeof(CT_t));
+      if (4 > sscanf(bp, "cpu%d %Lu %Lu %Lu %Lu %Lu %Lu %Lu %Lu", &cpu_ptr->id
+         , &cpu_ptr->cur.u, &cpu_ptr->cur.n, &cpu_ptr->cur.s
+         , &cpu_ptr->cur.i, &cpu_ptr->cur.w, &cpu_ptr->cur.x
+         , &cpu_ptr->cur.y, &cpu_ptr->cur.z)) {
+            memmove(cpu_ptr, sum_ptr, sizeof(CPU_t));
             break;        // tolerate cpus taken offline
       }
 
 #ifndef CPU_ZEROTICS
-      cpus[i].edge = cpus[sumSLOT].edge;
-      // this is for symmetry only, it's not currently required
-      cpus[i].cur.tot = cpus[sumSLOT].cur.tot;
+      cpu_ptr->edge = sum_ptr->edge;
 #endif
 #ifdef PRETEND8CPUS
-      cpus[i].id = i;
+      cpu_ptr->id = i;
 #endif
 #ifndef NUMA_DISABLE
-      if (Numa_node_tot
-      && -1 < (node = Numa_node_of_cpu(cpus[i].id))) {
-         cpus[i].node = node;
-         node += (sumSLOT + 1);
-         cpus[node].cur.u += cpus[i].cur.u;
-         cpus[node].cur.n += cpus[i].cur.n;
-         cpus[node].cur.s += cpus[i].cur.s;
-         cpus[node].cur.i += cpus[i].cur.i;
-         cpus[node].cur.w += cpus[i].cur.w;
-         cpus[node].cur.x += cpus[i].cur.x;
-         cpus[node].cur.y += cpus[i].cur.y;
-         cpus[node].cur.z += cpus[i].cur.z;
+      /* henceforth, with just a little more arithmetic we can avoid
+         maintaining *any* node stats unless they're actually needed */
+      if (CHKw(Curwin, View_CPUNOD)
+      && Numa_node_tot
+      && -1 < (node = Numa_node_of_cpu(cpu_ptr->id))) {
+         // use our own pointer to avoid gcc subscript bloat
+         CPU_t *nod_ptr = sum_ptr + 1 + node;
+         nod_ptr->cur.u += cpu_ptr->cur.u; nod_ptr->sav.u += cpu_ptr->sav.u;
+         nod_ptr->cur.n += cpu_ptr->cur.n; nod_ptr->sav.n += cpu_ptr->sav.n;
+         nod_ptr->cur.s += cpu_ptr->cur.s; nod_ptr->sav.s += cpu_ptr->sav.s;
+         nod_ptr->cur.i += cpu_ptr->cur.i; nod_ptr->sav.i += cpu_ptr->sav.i;
+         nod_ptr->cur.w += cpu_ptr->cur.w; nod_ptr->sav.w += cpu_ptr->sav.w;
+         nod_ptr->cur.x += cpu_ptr->cur.x; nod_ptr->sav.x += cpu_ptr->sav.x;
+         nod_ptr->cur.y += cpu_ptr->cur.y; nod_ptr->sav.y += cpu_ptr->sav.y;
+         nod_ptr->cur.z += cpu_ptr->cur.z; nod_ptr->sav.z += cpu_ptr->sav.z;
+#ifndef CPU_ZEROTICS
+         /* yep, we re-value this repeatedly for each cpu encountered, but we
+            can then avoid a prior loop to selectively initialize each node */
+         nod_ptr->edge = sum_ptr->edge;
+#endif
+         cpu_ptr->node = node;
       }
 #endif
-   }
+   } // end: for each cpu
 
    Cpu_faux_tot = i;      // tolerate cpus taken offline
 
@@ -3246,8 +3264,9 @@ static void before (char *me) {
 #if defined(PRETEND_NUMA) || defined(PRETEND8CPUS)
    Numa_node_tot = Numa_max_node() + 1;
 #else
-   Libnuma_handle = dlopen("libnuma.so.1", RTLD_LAZY);
-   if (Libnuma_handle) {
+   // we'll try for the most recent version, then a version we know works...
+   if ((Libnuma_handle = dlopen("libnuma.so", RTLD_LAZY))
+    || (Libnuma_handle = dlopen("libnuma.so.1", RTLD_LAZY))) {
       Numa_max_node = dlsym(Libnuma_handle, "numa_max_node");
       Numa_node_of_cpu = dlsym(Libnuma_handle, "numa_node_of_cpu");
       if (Numa_max_node && Numa_node_of_cpu)
@@ -3265,7 +3284,7 @@ static void before (char *me) {
 #endif
    // lastly, establish a robust signals environment
    sigemptyset(&sa.sa_mask);
-   // with user position perserved through SIGWINCH, we must avoid SA_RESTART
+   // with user position preserved through SIGWINCH, we must avoid SA_RESTART
    sa.sa_flags = 0;
    for (i = SIGRTMAX; i; i--) {
       switch (i) {
@@ -3332,7 +3351,6 @@ static int config_cvt (WIN_t *q) {
       }
    }
    q->rc.winflags |= x;
-   SETw(q, Show_JRNUMS);
 
    // now let's convert old top's more limited fields...
    j = strlen(q->rc.fieldscur);
@@ -3428,10 +3446,10 @@ static void configs_read (void) {
          p = fmtmk(N_fmt(RC_bad_entry_fmt), i+1, Rc_name);
 
          // note: "fieldscur=%__s" on next line should equal PFLAGSSIZ !
-         if (2 != fscanf(fp, "%3s\tfieldscur=%64s\n"
+         if (2 != fscanf(fp, "%3s\tfieldscur=%80s\n"
             , w->rc.winname, w->rc.fieldscur))
                goto default_or_error;
-#if PFLAGSSIZ > 64
+#if PFLAGSSIZ > 80
  // too bad fscanf is not as flexible with his format string as snprintf
  # error Hey, fix the above fscanf 'PFLAGSSIZ' dependency !
 #endif
@@ -3446,11 +3464,12 @@ static void configs_read (void) {
          switch (Rc.id) {
             case 'a':                          // 3.2.8 (former procps)
                if (config_cvt(w))
-                  goto default_or_error;
-               break;
+                  goto default_or_error;          // fall through !
             case 'f':                          // 3.3.0 thru 3.3.3 (procps-ng)
-               SETw(w, Show_JRNUMS);           //    fall through !
-            case 'g':                          // current RCF_VERSION_ID
+               SETw(w, Show_JRNUMS);              // fall through !
+            case 'g':                          // 3.3.4 thru 3.3.8
+               scat(w->rc.fieldscur, RCF_PLUS_H); // fall through !
+            case 'h':                          // current RCF_VERSION_ID
             default:                           // and future versions?
                if (strlen(w->rc.fieldscur) != sizeof(DEF_FIELDS) - 1)
                   goto default_or_error;
@@ -5224,6 +5243,17 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
             break;
          case P_MEM:
             cp = scale_pcnt((float)pages2K(p->resident) * 100 / kb_main_total, W, Jn);
+            break;
+         case P_NS1:   // IPCNS
+         case P_NS2:   // MNTNS
+         case P_NS3:   // NETNS
+         case P_NS4:   // PIDNS
+         case P_NS5:   // USERNS
+         case P_NS6:   // UTSNS
+         {  long ino = p->ns[i - P_NS1];
+            if (ino > 0) cp = make_num(ino, W, Jn, i);
+            else cp = make_str("-", W, Js, i);
+         }
             break;
          case P_NCE:
             cp = make_num(p->nice, W, Jn, AUTOX_NO);

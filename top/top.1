@@ -76,7 +76,7 @@
 .
 .\" Document /////////////////////////////////////////////////////////////
 .\" ----------------------------------------------------------------------
-.TH TOP 1 "March 2013" "procps-ng" "User Commands"
+.TH TOP 1 "November 2013" "procps-ng" "User Commands"
 .\" ----------------------------------------------------------------------
 
 .\" ----------------------------------------------------------------------
@@ -383,8 +383,8 @@ Display only processes with a user id or user name matching that given.
 The '\-u' option matches on \fI effective\fR user whereas the '\-U' option
 matches on\fI any\fR user (real, effective, saved, or filesystem).
 
-Prepending an exclamation point ('!') to the user id or name instucts top to
-display only processes with users not matching the one provided.
+Prepending an exclamation point ('!') to the user id or name instructs top
+to display only processes with users not matching the one provided.
 
 The 'p', 'u' and 'U' \*(COs are mutually exclusive.
 
@@ -650,8 +650,8 @@ If you see 'rt' in this field, it means the task is running under
 'real time' scheduling priority.
 
 Under linux, real time priority is somewhat misleading since traditionally
-the operating itself was not preemptable.
-And while the 2.6 kernel can be made mostly preemptable, it is not always so.
+the operating itself was not preemptible.
+And while the 2.6 kernel can be made mostly preemptible, it is not always so.
 
 .TP 4
 17.\fB RES \*(Em Resident Memory Size (KiB) \fR
@@ -826,12 +826,46 @@ page available.
 The number of threads associated with a process.
 
 .TP 4
-42.\fB vMj \*(Em Major Page Fault Count Delta\fR
+42.\fB nsIPC \*(Em IPC namespace \fR
+The Inode of the namespace used to isolate interprocess communication (IPC)
+resources such as System V IPC objects and POSIX message queues.
+
+.TP 4
+43.\fB nsMNT \*(Em MNT namespace \fR
+The Inode of the namespace used to isolate filesystem mount points thus
+offering different views of the filesystem hierarchy.
+
+.TP 4
+44.\fB nsNET \*(Em NET namespace \fR
+The Inode of the namespace used to isolate resources such as network devices,
+IP addresses, IP routing, port numbers, etc.
+
+.TP 4
+45.\fB nsPID \*(Em PID namespace \fR
+The Inode of the namespace used to isolate process ID numbers
+meaning they need not remain unique.
+Thus, each such namespace could have its own 'init' (PID #1) to
+manage various initialization tasks and reap orphaned child processes.
+
+.TP 4
+46.\fB nsUSER \*(Em USER namespace \fR
+The Inode of the namespace used to isolate the user and group ID numbers.
+Thus, a process could have a normal unprivileged user ID outside a user
+namespace while having a user ID of 0, with full root privileges, inside
+that namespace.
+
+.TP 4
+47.\fB nsUTS \*(Em UTS namespace \fR
+The Inode of the namespace used to isolate hostname and NIS domain name.
+UTS simply means "UNIX Time-sharing System".
+
+.TP 4
+48.\fB vMj \*(Em Major Page Fault Count Delta\fR
 The number of\fB major\fR page faults that have occurred since the
 last update (see nMaj).
 
 .TP 4
-43.\fB vMn \*(Em Minor Page Fault Count Delta\fR
+49.\fB vMn \*(Em Minor Page Fault Count Delta\fR
 The number of\fB minor\fR page faults that have occurred since the
 last update (see nMin).
 
@@ -1100,10 +1134,12 @@ This \*(CI can be used to alter the widths of the following fields:
 .nf
    \fI field  default    field  default    field  default \fR
     GID       5       GROUP     8       WCHAN    10
-    RUID      5       RUSER     8
-    SUID      5       SUSER     8
-    UID       5       USER      8
-                      TTY       8
+    RUID      5       RUSER     8       nsIPC    10
+    SUID      5       SUSER     8       nsMNT    10
+    UID       5       USER      8       nsNET    10
+                      TTY       8       nsPID    10
+                                        nsUSR    10
+                                        nsUTS    10
 .fi
 
 You will be prompted for the amount to be added to the default
@@ -1270,6 +1306,11 @@ The sort field might\fI not\fR be visible because:
     1) there is insufficient\fI Screen Width \fR
     2) the 'f' \*(CI turned it \*F
 
+\*(NT Whenever 'Searching' and/or 'Other Filtering' is active in a window,
+column highlighting is temporarily disabled.
+\*(XC notes at the end of topics 5d. SEARCHING and 5e. FILTERING for an
+explanation why.
+
 .TP 7
 \ \ \ \fBy\fR\ \ :\fIRow-Highlight\fR toggle \fR
 Changes highlighting for "running" tasks.
@@ -1337,7 +1378,7 @@ matches on\fB any\fR user (real, effective, saved, or filesystem).
 
 Thereafter, in that \*(TW only matching users will be shown, or possibly
 no processes will be shown.
-Prepending an exclamation point ('!') to the user id or name instucts top
+Prepending an exclamation point ('!') to the user id or name instructs top
 to display only processes with users not matching the one provided.
 
 Different \*(TWs can be used to filter different users.
@@ -1349,7 +1390,7 @@ command but just press <Enter> at the prompt.
 In this mode, processes are reordered according to their parents and
 the layout of the COMMAND column resembles that of a tree.
 In forest view mode it is still possible to toggle between program
-name and commamd line (\*(Xc 'c' \*(CI) or between processes and
+name and command line (\*(Xc 'c' \*(CI) or between processes and
 threads (\*(Xc 'H' \*(CI).
 
 \*(NT Typing any key affecting the sort order will exit forest view
@@ -1673,8 +1714,8 @@ The above \*(CIs are\fB always\fR available in \*(FM but\fB never\fR
 available in \*(AM if the \*(CW's \*(TD has been toggled \*F.
 
 \*(NT When any form of filtering is active, you can expect some slight
-abberations when scrolling since not all tasks will be visible.
-This is paticularly apparent when using the Up/Down \*(KAs.
+aberrations when scrolling since not all tasks will be visible.
+This is particularly apparent when using the Up/Down \*(KAs.
 
 .\" ......................................................................
 .SS 5d. SEARCHING in a Window
@@ -2037,7 +2078,7 @@ enable backslash interpretation regardless of which shell you use.
 
 \fBCaution\fR:
 If any inspect entry you create produces output with unprintable characters
-they will be displayed in either the ^C notation or hexidecimal <FF> form,
+they will be displayed in either the ^C notation or hexadecimal <FF> form,
 depending on their value.
 This applies to tab characters as well, which will show as '^I'.
 If you want a truer representation, any embedded tabs should be expanded.
