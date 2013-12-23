@@ -220,7 +220,7 @@ static int Numa_node_tot;
 static int Numa_node_sel = -1;
 #ifndef NUMA_DISABLE
 static void *Libnuma_handle;
-static int stderr_save = -1;
+static int Stderr_save = -1;
 #if defined(PRETEND_NUMA) || defined(PRETEND8CPUS)
 static int Numa_max_node(void) { return 3; }
 static int Numa_node_of_cpu(int num) { return (num % 4); }
@@ -246,9 +246,9 @@ SCB_NUM1(CPU, pcpu)
 SCB_NUM1(DAT, drs)
 SCB_NUM1(DRT, dt)
 SCB_STRS(ENV, environ[0])
-SCB_NUM1(FLG, flags)
 SCB_NUM1(FL1, maj_flt)
 SCB_NUM1(FL2, min_flt)
+SCB_NUM1(FLG, flags)
 SCB_NUM1(FV1, maj_delta)
 SCB_NUM1(FV2, min_delta)
 SCB_NUMx(GID, egid)
@@ -3445,8 +3445,8 @@ static void configs_read (void) {
          WIN_t *w = &Winstk[i];
          p = fmtmk(N_fmt(RC_bad_entry_fmt), i+1, Rc_name);
 
-         // note: "fieldscur=%__s" on next line should equal PFLAGSSIZ !
-         if (2 != fscanf(fp, "%3s\tfieldscur=%80s\n"
+         // note: "fieldscur=%__s" on next line should equal (PFLAGSSIZ -1) !
+         if (2 != fscanf(fp, "%3s\tfieldscur=%79s\n"
             , w->rc.winname, w->rc.fieldscur))
                goto default_or_error;
 #if PFLAGSSIZ > 80
@@ -4069,8 +4069,8 @@ static void wins_stage_2 (void) {
       Yes, he provides some overridable 'weak' functions to change such
       behavior but we can't exploit that since we don't follow a normal
       ld route to symbol resolution (we use that dlopen() guy instead)! */
-   stderr_save = dup(fileno(stderr));
-   if (-1 < stderr_save && freopen("/dev/null", "w", stderr))
+   Stderr_save = dup(fileno(stderr));
+   if (-1 < Stderr_save && freopen("/dev/null", "w", stderr))
       ;                           // avoid -Wunused-result
 #endif
 
@@ -5220,14 +5220,14 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
          case P_ENV:
             makeVAR(p->environ[0]);
             break;
-         case P_FLG:
-            cp = make_str(hex_make(p->flags, 1), W, Js, AUTOX_NO);
-            break;
          case P_FL1:
             cp = scale_num(p->maj_flt, W, Jn);
             break;
          case P_FL2:
             cp = scale_num(p->min_flt, W, Jn);
+            break;
+         case P_FLG:
+            cp = make_str(hex_make(p->flags, 1), W, Js, AUTOX_NO);
             break;
          case P_FV1:
             cp = scale_num(p->maj_delta, W, Jn);
@@ -5244,6 +5244,9 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
          case P_MEM:
             cp = scale_pcnt((float)pages2K(p->resident) * 100 / kb_main_total, W, Jn);
             break;
+         case P_NCE:
+            cp = make_num(p->nice, W, Jn, AUTOX_NO);
+            break;
          case P_NS1:   // IPCNS
          case P_NS2:   // MNTNS
          case P_NS3:   // NETNS
@@ -5254,9 +5257,6 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
             if (ino > 0) cp = make_num(ino, W, Jn, i);
             else cp = make_str("-", W, Js, i);
          }
-            break;
-         case P_NCE:
-            cp = make_num(p->nice, W, Jn, AUTOX_NO);
             break;
 #ifdef OOMEM_ENABLE
          case P_OOA:
@@ -5308,8 +5308,8 @@ static const char *task_show (const WIN_t *q, const proc_t *p) {
          case P_THD:
             cp = make_num(p->nlwp, W, Jn, AUTOX_NO);
             break;
-         case P_TME:
          case P_TM2:
+         case P_TME:
          {  TIC_t t = p->utime + p->stime;
             if (CHKw(q, Show_CTIMES)) t += (p->cutime + p->cstime);
             cp = scale_tics(t, W, Jn);
@@ -5553,10 +5553,10 @@ static void frame_make (void) {
 #ifndef NUMA_DISABLE
    /* we gotta reverse the stderr redirect which was employed in wins_stage_2
       and needed because the two libnuma 'weak' functions were useless to us! */
-   if (-1 < stderr_save) {
-      dup2(stderr_save, fileno(stderr));
-      close(stderr_save);
-      stderr_save = -1;
+   if (-1 < Stderr_save) {
+      dup2(Stderr_save, fileno(stderr));
+      close(Stderr_save);
+      Stderr_save = -1;
    }
 #endif
 
